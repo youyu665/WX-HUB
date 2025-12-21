@@ -3,1622 +3,249 @@
 
 
 
-local function CanSeePlayer(player, maxDistance)
-    if not WallCheck then
-        return true
-    end
-    
-    local localCharacter = LocalPlayer.Character
-    if not localCharacter then
-        return false
-    end
-    
-    local targetCharacter = player.Character
-    local targetPart = targetCharacter and targetCharacter:FindFirstChild(AimPart)
-    if not targetPart then
-        return false
-    end
-    
-    local ray = Ray.new(Camera.CFrame.Position, (targetPart.Position - Camera.CFrame.Position).Unit * maxDistance)
-    local hitPart, _ = workspace:FindPartOnRayWithIgnoreList(ray, {localCharacter})
-    
-    return not hitPart or not hitPart:IsDescendantOf(player.Character)
-end
 
-local function IsAlive(player)
-    local character = player.Character
-    if character then
-        local humanoid = character:FindFirstChildOfClass("Humanoid")
-        if humanoid then
-            return humanoid.Health > 0
-        end
-    end
-    return false
-end
 
-local function FindBestTarget()
-    local closestDistance = math.huge
-    local lowestHealth = math.huge
-    local screenCenter = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
-    
-    local lowestHealthTarget = nil
-    local closestTarget = nil
-    
-    for _, player in ipairs(PlayersService:GetPlayers()) do
-        if player ~= LocalPlayer and not (IgnoreTeam and IsTeammate(player)) then
-            local character = player.Character
-            
-            if character and character:FindFirstChild(AimPart) then
-                if not CheckAlive or IsAlive(player) then
-                    if not WallCheck or CanSeePlayer(player, 100) then
-                        local screenPosition, onScreen = Camera:WorldToViewportPoint(character[AimPart].Position)
-                        if onScreen then
-                            local distance = (Vector2.new(screenPosition.X, screenPosition.Y) - screenCenter).Magnitude
-                            
-                            if distance < closestDistance then
-                                if distance < AimRadius then
-                                    closestTarget = player
-                                end
-                                closestDistance = distance
-                            end
-                            
-                            if TargetLowestHealth then
-                                local humanoid = character:FindFirstChildOfClass("Humanoid")
-                                if humanoid and humanoid.Health > 0 and humanoid.Health < lowestHealth then
-                                    lowestHealth = humanoid.Health
-                                    lowestHealthTarget = player
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-    
-    return (TargetLowestHealth and lowestHealthTarget) or closestTarget
-end
 
-local function GetPredictedPosition(player, deltaTime)
-    if not UsePrediction then
-        if player.Character and player.Character:FindFirstChild(AimPart) then
-            return player.Character[AimPart].Position
-        end
-        return nil
-    end
-    
-    local character = player.Character
-    if character and character:FindFirstChild(AimPart) then
-        local aimPart = character[AimPart]
-        local velocity = aimPart.Velocity
-        return aimPart.Position + velocity * deltaTime * PredictionScale
-    end
-    return nil
-end
 
--- ==================== 目标高亮系统 ====================
-local CurrentTarget = nil
-local HighlightedTargets = {}
 
-local function HighlightTarget(player)
-    if HighlightedTargets[player] then
-        return
-    end
-    
-    local character = player.Character
-    if character then
-        local highlight = Instance.new("Highlight")
-        highlight.Adornee = character
-        highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-        highlight.FillColor = Color3.fromRGB(255, 0, 0)
-        highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
-        highlight.FillTransparency = 0.5
-        highlight.OutlineTransparency = 0
-        highlight.Parent = character
-        
-        HighlightedTargets[player] = highlight
-    end
-end
 
-local function RemoveHighlight(player)
-    if HighlightedTargets[player] then
-        HighlightedTargets[player]:Destroy()
-        HighlightedTargets[player] = nil
-    end
-end
+DESC="点击按钮复制当前服务器名称"，
+按钮={{
+标题="复制"，
+图标="复制"，
+variant="Primary"，
+回调=函数()
+本地placename=game:GetService("MarketplaceService")：GetProductInfo(game.placeId)。姓名
+setclipboard(地名)
+本地声音=Instance.new("声音"，游戏：GetService("声音服务"))
+Sound.SoundId="rbxassetid://138820873376530"
+声音：播放()
+WindUI：通知({
+title="WX："，
+内容="已成功复制服务器名称！"，
+icon="bell"，
+IconThemed=true，
+持续时间=5
+            })
+结束
+    }}
+})
 
-local function ClearAllHighlights()
-    for player, highlight in pairs(HighlightedTargets) do
-        highlight:Destroy()
-        HighlightedTargets[player] = nil
-    end
-end
+局部段落7=TabHandles.WX1：段落({
+标题="复制注册时间"，
+DESC="点击按钮复制账号注册天数"，
+按钮={{
+标题="复制"，
+图标="复制"，
+variant="Primary"，
+回调=函数()
+本地会计=toString(游戏：GetService("玩家").LocalPlayer.Accountage).."天"
+setclipboard(会计)
+本地声音=Instance.new("声音"，游戏：GetService("声音服务"))
+Sound.SoundId="rbxassetid://138820873376530"
+声音：播放()
+WindUI：通知({
+title="WX："，
+内容="已成功复制注册时间！"，
+icon="bell"，
+IconThemed=true，
+持续时间=5
+            })
+结束
+    }}
+})
 
--- ==================== 自瞄主循环 ====================
-local AimLoopConnection = nil
-
-local function ToggleAim(enabled)
-    if enabled then
-        IsAimEnabled = true
-        AimCircle.Visible = true
-        AimCircle.Radius = AimRadius
-        
-        if AimLoopConnection then
-            AimLoopConnection:Disconnect()
-        end
-        
-        AimLoopConnection = RunService.RenderStepped:Connect(function(deltaTime)
-            if IsAimEnabled then
-                UpdateAimCirclePosition()
-                
-                local target = FindBestTarget()
-                if target and target.Character and target.Character:FindFirstChild(AimPart) then
-                    CurrentTarget = target
-                    
-                    local predictedPosition = GetPredictedPosition(target, deltaTime)
-                    if predictedPosition then
-                        AimAt(predictedPosition)
-                    end
-                    
-                    HighlightTarget(target)
-                else
-                    CurrentTarget = nil
-                    ClearAllHighlights()
-                end
-                
-
-                local humanoid = character:FindFirstChildOfClass("Humanoid")
-                if humanoid and humanoid.Parent and humanoid.MoveDirection.Magnitude > 0 then
-                    character:TranslateBy(humanoid.MoveDirection * SpeedMultiplier / 10)
-                end
-            end
-        end)
-        
-        WindUI:Notify({
-            Title = "WX自瞄",
-            Content = "速度修改已开启",
-            Icon = "zap",
-            Duration = 2
+--开关功能能关闭
+局部切换1=TabHandles.WX2：切换({
+标题="夜视功能"，
+值=false，
+回调=函数(值)
+如果值，则
+game.Lighting.Ambient=Color3.new(1，1，1)
+其他
+game.Lighting.Ambient=Color3.new(0，0，0)
+结束
+WindUI：通知({
+title="WX"，
+内容=值和“”已开启"或"已关闭"，
+持续时间=3，
+图标="布局网格"，
         })
-    elseif SpeedConnection then
-        SpeedConnection:Disconnect()
-        SpeedConnection = nil
-        SpeedEnabled = false
-        
-        WindUI:Notify({
-            Title = "WX自瞄",
-            Content = "速度修改已关闭",
-            Icon = "zap-off",
-            Duration = 2
-        })
-    end
-end
-
-local function EnableInfiniteJump()
-    game:GetService("UserInputService").JumpRequest:connect(function()
-        game:GetService("Players").LocalPlayer.Character:FindFirstChildOfClass("Humanoid"):ChangeState("Jumping")
-    end)
-    
-    WindUI:Notify({
-        Title = "WX自瞄",
-        Content = "无限跳跃已启用",
-        Icon = "chevrons-up",
-        Duration = 2
-    })
-end
-
--- ==================== 公告页面 ====================
-local Paragraph1 = TabHandles.WX1:Paragraph({
-    Title = "WX作者:庅韷，免费汉化",
-    Desc = "协助者:ADF(FLOKIV2) ,斩过天花板, 沙记",
-    Thumbnail = "rbxassetid://",
-    ThumbnailSize = 28,
-})
-local Paragraph2 = TabHandles.WX1:Paragraph({
-    Title = "WX脚本特别欢迎您使用",
-    Desc = "如果你玩此脚本被封了 或者服务器被封了我们概不负责",
-    ImageSize = 42,
-    ThumbnailSize = 120,
-})
-local Paragraph1 = TabHandles.WX1:Paragraph({
-    Title = "更新日志1",
-    Desc = "加了锻造汉化",
-    Image = "rbxassetid://",
-    ImageSize = 42,
-    Thumbnail = "rbxassetid://118776038727192",
-    ThumbnailSize = 120,
-})
-local Paragraph3 = TabHandles.WX1:Paragraph({
-    Title = "WX更新日志2",
-    Desc = "加了通用自瞄",
-    ImageSize = 42,
-    ThumbnailSize = 120,
-})
---你的群号
-local Paragraph4 = TabHandles.WX1:Paragraph({
-    Title = "复制主群",
-    Desc = "QQ主群:1071851583",
-    Buttons = {{
-        Title = "复制",
-        Icon = "copy",
-        Variant = "Primary",
-        Callback = function()
-            setclipboard("1071851583")
-            local Sound = Instance.new("Sound", game:GetService("SoundService"))
-            Sound.SoundId = "rbxassetid://138820873376530"
-            Sound:Play()
-            WindUI:Notify({
-                Title = "WX：",
-                Content = "已成功复制！",
-                Icon = "bell",
-                IconThemed = true,
-                Duration = 5
-            })
-        end
-    }}
+结束
 })
 
--- ==================== 通用功能页面 ====================
-local UserInputService = game:GetService("UserInputService")
-local Workspace = game:GetService("Workspace")
-local JumpEnabled = false
-local jumpConnection
-
-local function getHumanoid()
-    local char = game.Players.LocalPlayer.Character
-    return char and char:FindFirstChildOfClass("Humanoid") or nil
-end
-
--- 移动速度滑块
-TabHandles.WX2:Slider({
-    Title = "移动速度",
-    Desc = "调节角色移动速度（1-500）",
-    Value = {
-        Min = 1,
-        Max = 500,
-        Default = getHumanoid() and getHumanoid().WalkSpeed or 16
-    },
-    Step = 1,
-    Callback = function(value)
-        local humanoid = getHumanoid()
-        if humanoid then
-            humanoid.WalkSpeed = tonumber(value)
-        end
-    end
-})
-
--- 跳跃高度滑块
-TabHandles.WX2:Slider({
-    Title = "跳跃高度",
-    Desc = "调节角色跳跃力度（1-500）",
-    Value = {
-        Min = 1,
-        Max = 500,
-        Default = game.Players.LocalPlayer.Character and game.Players.LocalPlayer.Character:FindFirstChildOfClass("Humanoid") and game.Players.LocalPlayer.Character.Humanoid.JumpPower or 50
-    },
-    Step = 1,
-    Callback = function(value)
-        local plr = game.Players.LocalPlayer
-        local char = plr.Character or plr.CharacterAdded:Wait()
-        local humanoid = char:FindFirstChildOfClass("Humanoid")
-        if humanoid then
-            humanoid.JumpPower = tonumber(value)
-            humanoid.UseJumpPower = true
-        end
-    end
-})
--- 重力设置滑块
-TabHandles.WX2:Slider({
-    Title = "重力设置",
-    Desc = "调节世界重力大小（1-500）",
-    Value = {
-        Min = 1,
-        Max = 500,
-        Default = Workspace.Gravity
-    },
-    Step = 1,
-    Callback = function(value)
-        Workspace.Gravity = tonumber(value)
-    end
-})
-
--- 无限跳跃开关
-TabHandles.WX2:Toggle({
-    Title = "启用无限跳跃",
-    Desc = "开启后可空中连续跳跃",
-    Value = false,
-    Callback = function(state)
-        JumpEnabled = state
-        if state then
-            WindUI:Notify({
-                Title = "功能已启用",
-                Content = "无限跳跃已开启",
-                Icon = "check-circle",
-                Color = Color3.fromHex("#30ff6a"),
-                Duration = 2
-            })
-        else
-            WindUI:Notify({
-                Title = "功能已关闭",
-                Content = "无限跳跃已禁用",
-                Icon = "x-circle",
-                Color = Color3.fromHex("#ff3030"),
-                Duration = 2
-            })
-        end
-        if jumpConnection then jumpConnection:Disconnect() end
-        if state then
-            jumpConnection = UserInputService.JumpRequest:Connect(function()
-                local success, humanoid = pcall(getHumanoid)
-                if success and humanoid and humanoid.Health > 0 then
-                    humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-                end
-            end)
-        end
-    end
-})
-
-local Paragraph5 = TabHandles.WX1:Paragraph({
-    Title = "复制用户ID",
-    Desc = "点击按钮复制当前账号ID",
-    Buttons = {{
-        Title = "复制",
-        Icon = "copy",
-        Variant = "Primary",
-        Callback = function()
-            setclipboard(tostring(game:GetService("Players").LocalPlayer.UserId))
-            local Sound = Instance.new("Sound", game:GetService("SoundService"))
-            Sound.SoundId = "rbxassetid://138820873376530"
-            Sound:Play()
-            WindUI:Notify({
-                Title = "WX：",
-                Content = "已成功复制用户ID！",
-                Icon = "bell",
-                IconThemed = true,
-                Duration = 5
-            })
-        end
-    }}
-})
-
-local Paragraph6 = TabHandles.WX1:Paragraph({
-    Title = "复制服务器名称",
-    Desc = "点击按钮复制当前服务器名称",
-    Buttons = {{
-        Title = "复制",
-        Icon = "copy",
-        Variant = "Primary",
-        Callback = function()
-            local placeName = game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId).Name
-            setclipboard(placeName)
-            local Sound = Instance.new("Sound", game:GetService("SoundService"))
-            Sound.SoundId = "rbxassetid://138820873376530"
-            Sound:Play()
-            WindUI:Notify({
-                Title = "WX：",
-                Content = "已成功复制服务器名称！",
-                Icon = "bell",
-                IconThemed = true,
-                Duration = 5
-            })
-        end
-    }}
-})
-
-local Paragraph7 = TabHandles.WX1:Paragraph({
-    Title = "复制注册时间",
-    Desc = "点击按钮复制账号注册天数",
-    Buttons = {{
-        Title = "复制",
-        Icon = "copy",
-        Variant = "Primary",
-        Callback = function()
-            local accountAge = tostring(game:GetService("Players").LocalPlayer.AccountAge) .. " 天"
-            setclipboard(accountAge)
-            local Sound = Instance.new("Sound", game:GetService("SoundService"))
-            Sound.SoundId = "rbxassetid://138820873376530"
-            Sound:Play()
-            WindUI:Notify({
-                Title = "WX：",
-                Content = "已成功复制注册时间！",
-                Icon = "bell",
-                IconThemed = true,
-                Duration = 5
-            })
-        end
-    }}
-})
-
- --开关功能能关闭
-local Toggle1 = TabHandles.WX2:Toggle({
-    Title = "夜视功能", 
-    Value = false, 
-    Callback = function(Value)
-        if Value then
-            game.Lighting.Ambient = Color3.new(1, 1, 1)
-        else
-            game.Lighting.Ambient = Color3.new(0, 0, 0)
-        end
-        WindUI:Notify({
-            Title = "WX",
-            Content = Value and "已开启" or "已关闭",
-            Duration = 3,
-            Icon = "layout-grid",
-        })
-    end
-})
-
--- ==================== 自瞄系统页面 ====================
+--====================自瞄系统页面====================
 -- 自瞄设置区域
-local AimSection1 = TabHandles.WX3:Section({Title = "自瞄设置"})
+当地的AimSection1=TabHandles.WX3:Section({Title="自瞄设置"})
 
-AimSection1:Toggle({
-    Title = "自瞄开关",
-    Desc = "开启/关闭自瞄功能",
-    Value = false,
-    Callback = function(value)
-        ToggleAim(value)
-    end
-})
-
-AimSection1:Toggle({
-    Title = "预测自瞄",
-    Desc = "根据目标移动预测瞄准位置",
-    Value = false,
-    Callback = function(value)
-        UsePrediction = value
-    end
+目标部分1：切换({
+标题="自瞄开关"，
+DESC="开启/关闭自瞄功能"，
+值=false，
+回调=函数(值)
+ToggleAim(值)
+结束
 })
 
-AimSection1:Toggle({
-    Title = "优先最低血量",
-    Desc = "优先瞄准血量最低的玩家",
-    Value = false,
-    Callback = function(value)
-        TargetLowestHealth = value
-    end
+目标部分1：切换({
+标题="预测自瞄"，
+DESC="根据目标移动预测瞄准位置"，
+值=false，
+回调=函数(值)
+UsePrediction=value
+结束
 })
 
-AimSection1:Slider({
-    Title = "自瞄圈大小",
-    Desc = "调整自瞄识别范围",
-    Value = {
-        Min = 1,
-        Max = 600,
-        Default = 50,
-    },
-    Step = 1,
-    Callback = function(value)
-        AimRadius = value
-        if IsAimEnabled then
-            AimCircle.Radius = AimRadius
-        end
-    end
+目标部分1：切换({
+标题="优先最低血量"，
+DESC="优先瞄准血量最低的玩家"，
+值=false，
+回调=函数(值)
+TargetLowestHealth=value
+结束
 })
 
-AimSection1:Slider({
-    Title = "自瞄圈线宽",
-    Desc = "调整自瞄圈线条粗细",
-    Value = {
-        Min = 1,
-        Max = 10,
-        Default = 2,
-    },
-    Step = 1,
-    Callback = function(value)
-        AimCircle.Thickness = value
-    end
-})
+目标部分1：滑块({
 
--- 瞄准部位选择
-local AimPartOptions = {
-    ["头部"] = "Head",
-    ["躯干"] = "UpperTorso",
-    ["左手"] = "LeftHand",
-    ["右手"] = "RightHand",
-    ["左脚"] = "LeftFoot",
-    ["右脚"] = "RightFoot"
-}
-
-AimSection1:Dropdown({
-    Title = "瞄准部位",
-    Desc = "选择自瞄瞄准的身体部位",
-    Values = {"头部", "躯干", "左手", "右手", "左脚", "右脚"},
-    Value = "头部",
-    Callback = function(selected)
-        AimPart = AimPartOptions[selected]
-    end
-})
-
--- 瞄准圈颜色选择
-local AimCircleColors = {
-    ["红色"] = Color3.fromRGB(255, 0, 0),
-    ["黄色"] = Color3.fromRGB(255, 255, 0),
-    ["绿色"] = Color3.fromRGB(0, 255, 0),
-    ["蓝色"] = Color3.fromRGB(0, 0, 255),
-    ["紫色"] = Color3.fromRGB(128, 0, 128),
-    ["橙色"] = Color3.fromRGB(255, 165, 0),
-    ["白色"] = Color3.fromRGB(255, 255, 255)
-}
-
-AimSection1:Dropdown({
-    Title = "自瞄圈颜色",
-    Desc = "选择自瞄圈显示颜色",
-    Values = {"红色", "黄色", "绿色", "蓝色", "紫色", "橙色", "白色"},
-    Value = "绿色",  -- ✅ 改为绿色
-    Callback = function(selected)
-        AimCircle.Color = AimCircleColors[selected]
-    end
-})
-
-AimSection1:Divider()
-
-AimSection1:Toggle({
-    Title = "忽略队友",
-    Desc = "不瞄准同一队伍的玩家",
-    Value = false,
-    Callback = function(value)
-        IgnoreTeam = value
-    end
-})
-
-AimSection1:Toggle({
-    Title = "存活检查",
-    Desc = "只瞄准存活的玩家",
-    Value = false,
-    Callback = function(value)
-        CheckAlive = value
-    end
-})
-
-AimSection1:Slider({
-    Title = "预测系数",
-    Desc = "调整自瞄预测的强度",
-    Value = {
-        Min = 1,
-        Max = 30,
-        Default = 12,
-    },
-    Step = 1,
-    Callback = function(value)
-        PredictionScale = value / 10
-    end
-})
-
-AimSection1:Toggle({
-    Title = "墙体检查",
-    Desc = "只瞄准可见的玩家",
-    Value = false,
-    Callback = function(value)
-        WallCheck = value
-    end
-})
-
--- ESP透视系统区域
-local AimSection2 = TabHandles.WX3:Section({Title = "透视设置"})
-
-local ESPColors = {
-    ["白色"] = Color3.fromRGB(255, 255, 255),
-    ["青色"] = Color3.fromRGB(0, 255, 255),
-    ["蓝色"] = Color3.fromRGB(0, 0, 255),
-    ["紫色"] = Color3.fromRGB(128, 0, 128),
-    ["黄色"] = Color3.fromRGB(255, 255, 0),
-    ["绿色"] = Color3.fromRGB(0, 255, 0),
-    ["红色"] = Color3.fromRGB(255, 0, 0)
-}
-
-AimSection2:Toggle({
-    Title = "透视所有玩家",
-    Desc = "显示所有玩家的轮廓",
-    Value = false,
-    Callback = function(value)
-        ToggleESP(value)
-    end
-})
-
-AimSection2:Dropdown({
-    Title = "透视颜色",
-    Desc = "选择透视显示颜色",
-    Values = {"白色", "青色", "蓝色", "紫色", "黄色", "绿色", "红色"},
-    Value = "白色",
-    Callback = function(selected)
-        if not RainbowESP then
-            SetESPColor(ESPColors[selected])
-        end
-    end
-})
-
-AimSection2:Toggle({
-    Title = "彩虹色透视",
-    Desc = "启用七彩闪烁透视效果",
-    Value = false,
-    Callback = function(value)
-        ToggleRainbowESP(value)
-    end
-})
-
-AimSection2:Toggle({
-    Title = "显示玩家血条",
-    Desc = "显示玩家名字和血量信息",
-    Value = false,
-    Callback = function(value)
-        ToggleHealthbars(value)
-    end
-})
-
--- 移动修改系统区域
-local AimSection3 = TabHandles.WX3:Section({Title = "移动设置"})
-
-AimSection3:Toggle({
-    Title = "速度修改",
-    Desc = "修改角色移动速度",
-    Value = false,
-    Callback = function(value)
-        ToggleSpeed(value)
-    end
-})
-
-AimSection3:Slider({
-    Title = "速度倍数",
-    Desc = "设置移动速度的倍率",
-    Value = {
-        Min = 1,
-        Max = 1000,
-        Default = 1,
-    },
-    Step = 1,
-    Callback = function(value)
-        SpeedMultiplier = value
-    end
-})
-
-AimSection3:Button({
-    Title = "启用无限跳跃",
-    Desc = "启用无限跳跃功能",
-    Callback = function()
-        EnableInfiniteJump()
-    end
-})
-
--- 初始化ESP和血条
-UpdateAllESP()
-UpdateAllHealthbars()
-
--- ==================== 通用功能继续 ====================
-local Button2 = TabHandles.WX2:Button({
-    Title = "飞行",
-    Desc = "飞行功能",
-    Locked = false,
-    Callback = function()
-        loadstring(game:HttpGet("https://pastefy.app/tvJQcwGt/raw"))()
-        
-        WindUI:Notify({
-            Title = "WX",
-            Content = "加载成功",
-            Duration = 3,
-            Icon = "layout-grid",
-        })        
-    end
-})
-
-TabHandles.WX2:Toggle({
-Title = "穿墙(可用)",
-Desc = "开启后可无视碰撞穿过物体",
-Value = false,
-Callback = function(NC)
-local Workspace = game:GetService("Workspace")
-local Players = game:GetService("Players")
-Clipon = NC and true or false
-Stepped = game:GetService("RunService").Stepped:Connect(function()
-if Clipon then
-for a, b in pairs(Workspace:GetChildren()) do
-if b.Name == Players.LocalPlayer.Name then
-for i, v in pairs(Workspace[Players.LocalPlayer.Name]:GetChildren()) do
-if v:IsA("BasePart") then
-v.CanCollide = false
-end
-end
-end
-end
-else
-Stepped:Disconnect()
-end
-end)
-end
-})
-local Button3 = TabHandles.WX2:Button({
-    Title = "无头加断腿美化",
-    Desc = "",
-    Locked = false,
-    Callback = function()
-        loadstring(game:HttpGet("https://rawscripts.net/raw/Universal-Script-Permanent-Headless-And-korblox-Script-4140"))()
-        
-        WindUI:Notify({
-            Title = "正在加载WX美化",
-            Content = "加载成功",
-            Duration = 3,
-            Icon = "layout-grid",
-        })        
-    end
-})
-local Button4 = TabHandles.WX2:Button({
-    Title = "飞车",
-    Desc = "飞车功能",
-    Locked = false,
-    Callback = function()
-        loadstring(game:HttpGet("https://pastefy.app/0dZzBUiL/raw"))()
-        
-        WindUI:Notify({
-            Title = "正在加载WX飞车",
-            Content = "加载成功",
-            Duration = 3,
-            Icon = "layout-grid",
-        })        
-    end
-})
-local Button5 = TabHandles.WX2:Button({
-    Title = "最高画质",
-    Desc = "启用最高画质功能",
-    Locked = false,
-    Callback = function()
-        loadstring(game:HttpGet("https://pastebin.com/raw/jHBfJYmS"))()
-        WindUI:Notify({
-            Title = "WX",
-            Content = "最高画质功能加载成功",
-            Duration = 3,
-            Icon = "layout-grid",
-        })        
-    end
-})
-
-local Button6 = TabHandles.WX2:Button({
-    Title = "光影v4",
-    Desc = "启用光影v4功能",
-    Locked = false,
-    Callback = function()
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/MZEEN2424/Graphics/main/Graphics.xml"))()
-        WindUI:Notify({
-            Title = "WX",
-            Content = "光影v4功能加载成功",
-            Duration = 3,
-            Icon = "layout-grid",
-        })        
-    end
-})
-
-local Button7 = TabHandles.WX2:Button({
-    Title = "RTX高仿",
-    Desc = "启用RTX高仿功能",
-    Locked = false,
-    Callback = function()
-        loadstring(game:HttpGet('https://pastebin.com/raw/Bkf0BJb3'))()
-        WindUI:Notify({
-            Title = "WX",
-            Content = "RTX高仿功能加载成功",
-            Duration = 3,
-            Icon = "layout-grid",
-        })        
-    end
-})
-
-local Button8 = TabHandles.WX2:Button({
-    Title = "光影深",
-    Desc = "启用光影深功能",
-    Locked = false,
-    Callback = function()
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/MZEEN2424/Graphics/main/Graphics.xml"))()
-        WindUI:Notify({
-            Title = "WX",
-            Content = "光影深功能加载成功",
-            Duration = 3,
-            Icon = "layout-grid",
-        })        
-    end
-})
-
-local Button9 = TabHandles.WX2:Button({
-    Title = "光影浅",
-    Desc = "启用光影浅功能",
-    Locked = false,
-    Callback = function()
-        loadstring(game:HttpGet("https://pastebin.com/raw/jHBfJYmS"))()
-        WindUI:Notify({
-            Title = "WX",
-            Content = "光影浅功能加载成功",
-            Duration = 3,
-            Icon = "layout-grid",
-        })        
-    end
-})
-local Button10 = TabHandles.WX2:Button({
-    Title = "旋转甩飞",
-    Desc = "启用旋转甩飞功能",
-    Locked = false,
-    Callback = function()
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/dingding123hhh/tt/main/%E6%97%8B%E8%BD%AC.lua"))()
-        WindUI:Notify({
-            Title = "WX",
-            Content = "旋转甩飞功能加载成功",
-            Duration = 3,
-            Icon = "layout-grid",
-        })        
-    end
-})
-local Button14 = TabHandles.WX2:Button({
-    Title = "零件破坏者v2",
-    Desc = "启用零件破坏者v2功能",
-    Locked = false,
-    Callback = function()
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/cytj777i/-/main/零件破坏者v2"))()
-        WindUI:Notify({
-            Title = "WX",
-            Content = "零件破坏者v2功能加载成功",
-            Duration = 3,
-            Icon = "layout-grid",
-        })        
-    end
-})
-
-local Button15 = TabHandles.WX2:Button({
-    Title = "黑洞v5",
-    Desc = "启用黑洞v5功能",
-    Locked = false,
-    Callback = function()
-        loadstring(game:HttpGet("https://pastebin.com/raw/DN0upqNm"))()
-        WindUI:Notify({
-            Title = "WX",
-            Content = "黑洞v5功能加载成功",
-            Duration = 3,
-            Icon = "layout-grid",
-        })        
-    end
-})
-
-local Button16 = TabHandles.WX2:Button({
-    Title = "黑洞v6",
-    Desc = "启用黑洞v6功能",
-    Locked = false,
-    Callback = function()
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/chesslovers69/Super-ring-parts-v6/refs/heads/main/Bylukaslol"))()
-        WindUI:Notify({
-            Title = "WX",
-            Content = "黑洞v6功能加载成功",
-            Duration = 3,
-            Icon = "layout-grid",
-        })        
-    end
-})
-
-local Button17 = TabHandles.WX2:Button({
-    Title = "黑洞v7",
-    Desc = "启用黑洞v7功能",
-    Locked = false,
-    Callback = function()
-        loadstring(game:HttpGet("https://pastebin.com/raw/QYUALL7N"))()
-        WindUI:Notify({
-            Title = "WX",
-            Content = "黑洞v7功能加载成功",
-            Duration = 3,
-            Icon = "layout-grid",
-        })        
-    end
-})
-local Button18 = TabHandles.WX2:Button({
-    Title = "人物螺旋上天",
-    Desc = "启用人物螺旋上天功能",
-    Locked = false,
-    Callback = function()
-        loadstring(game:HttpGet("https://pastefy.app/xV1T3PAi/raw"))()
-        WindUI:Notify({
-            Title = "WX",
-            Content = "人物螺旋上天能加载成功",
-            Duration = 3,
-            Icon = "layout-grid",
-        })        
-    end
-})
-local Button19 = TabHandles.WX7:Button({
-    Title = "XK HUB",
-    Desc = "史上最好用的免费脚本",
-    Locked = false,
-    Callback = function()
-        loadstring(game:HttpGet(('https://github.com/devslopo/DVES/raw/main/XK%20Hub')))()
-        WindUI:Notify({
-            Title = "WX",
-            Content = "XK HUB加载成功",
-            Duration = 3,
-            Icon = "layout-grid",
-        })        
-    end
-})
-local Button20 = TabHandles.WX7:Button({
-    Title = "皮脚本",
-    Desc = "免费脚本",
-    Locked = false,
-    Callback = function()
-        getgenv().XiaoPi="皮脚本QQ群1002100032" loadstring(game:HttpGet("https://raw.githubusercontent.com/xiaopi77/xiaopi77/main/QQ1002100032-Roblox-Pi-script.lua"))()
-        WindUI:Notify({
-            Title = "WX",
-            Content = "皮脚本加载成功",
-            Duration = 3,
-            Icon = "layout-grid",
-        })        
-    end
-})
-local Button21 = TabHandles.WX7:Button({
-    Title = "沙脚本",
-    Desc = "很好用的免费脚本，沙记制作",
-    Locked = false,
-    Callback = function()
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/114514lzkill/ShaHUB/refs/heads/main/ShaHUB"))()
-        WindUI:Notify({
-            Title = "WX",
-            Content = "沙脚本加载成功",
-            Duration = 3,
-            Icon = "layout-grid",
-        })        
-    end
-})
-local Button22 = TabHandles.WX7:Button({
-    Title = "脚与本",
-    Desc = "卡密jyb",
-    Locked = false,
-    Callback = function()
-        loadstring(game:HttpGet("https://pastebin.com/raw/FnYpMeAk"))()
-        WindUI:Notify({
-            Title = "WX",
-            Content = "卡密jyb",
-            Duration = 3,
-            Icon = "layout-grid",
-        })        
-    end
-})
-local Button23 = TabHandles.WX7:Button({
-    Title = "WU脚本破解版",
-    Desc = "无需卡密，破解版",
-    Locked = false,
-    Callback = function()
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/WUSCRIPT/WU-Script/d32b223a23ad84ef7c295656bff860e134eb8a90/77-obfuscated.lua"))()
-        WindUI:Notify({
-            Title = "WX",
-            Content = "WU脚本加载成功",
-            Duration = 3,
-            Icon = "layout-grid",
-        })        
-    end
-})
-local Button24 = TabHandles.WX6:Button({
-    Title = "99夜刷钻石",
-    Desc = "可否使用未经测试，由国人制作",
-    Locked = false,
-    Callback = function()
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/TheqopThe/robax/refs/heads/main/jumpscare.lua"))()
-        WindUI:Notify({
-            Title = "WX",
-            Content = "99夜刷钻石加载成功",
-            Duration = 3,
-            Icon = "layout-grid",
-        })        
-    end
-})
-local Button25 = TabHandles.WX6:Button({
-    Title = "死铁轨脚本",
-    Desc = "未测试可否使用",
-    Locked = false,
-    Callback = function()
-        loadstring(game:HttpGet("https://api.luarmor.net/files/v3/loaders/e1cfd93b113a79773d93251b61af1e2f.lua"))()
-        WindUI:Notify({
-            Title = "WX",
-            Content = "死铁轨脚本加载成功",
-            Duration = 3,
-            Icon = "layout-grid",
-        })        
-    end
-})
-local Button26 = TabHandles.WX6:Button({
-    Title = "死亡铁轨刷债券",
-    Desc = "全自动",
-    Locked = false,
-    Callback = function()
-        getgenv().AutoExecute = true(loadstring or load)(game:HttpGet("https://raw.githubusercontent.com/hungquan99/HungHUB/main/loader.lua"))()
-        WindUI:Notify({
-            Title = "WX",
-            Content = "死亡铁轨刷债卷加载成功",
-            Duration = 3,
-            Icon = "layout-grid",
-        })        
-    end
-})
-local Button27 = TabHandles.WX6:Button({
-    Title = "最坚强的战场垃圾桶角色",
-    Desc = "任意角色即可执行，死亡后需重新执行",
-    Locked = false,
-    Callback = function()
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/yes1nt/yes/refs/heads/main/Trashcan%20Man", true))()
-        WindUI:Notify({
-            Title = "WX",
-            Content = "最坚强的战场垃圾桶加载成功",
-            Duration = 3,
-            Icon = "layout-grid",
-        })        
-    end
-})
-local Button28 = TabHandles.WX6:Button({
-    Title = "最坚强的战场火车头",
-    Desc = "需饿狼角色执行",
-    Locked = false,
-    Callback = function()
-        getgenv().settings = {
-    ["morph"] = {
-        ["enabled"] = false,
-        ["dontchangeskincolor"] = false,
-    },
-    ["ult_forcewalkspeed"] = true, -- forces walkspeed even if set to 0
-    ["ult_walkspeed"] = 64, -- how fast you walk in ult
-    ["tp_duration"] = 0.15 -- how long it takes to tp
-} 
-
-loadstring(game:HttpGet("https://raw.githubusercontent.com/skibiditoiletfan2007/ATrainSounds/refs/heads/main/ATrain.lua"))()
-        WindUI:Notify({
-            Title = "WX",
-            Content = "最坚强的战场火车头加载成功",
-            Duration = 3,
-            Icon = "layout-grid",
-        })        
-    end
-})
-local Button29 = TabHandles.WX6:Button({
-    Title = "最坚强的战场动作脚本",
-    Desc = "别人看不见，纯自己装帅用",
-    Locked = false,
-    Callback = function()
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/HellishAgem/HellishMovesetCutscene/refs/heads/main/Protected_6748082827088148.txt"))()
-        WindUI:Notify({
-            Title = "WX",
-            Content = "最坚强的战场动作加载成功",
-            Duration = 3,
-            Icon = "layout-grid",
-        })        
-    end
-})
-local Button30 = TabHandles.WX2:Button({
-    Title = "无敌少侠飞行",
-    Desc = "仅支持R15体型，非R15体型无法使用",
-    Locked = false,
-    Callback = function()
-        loadstring(game:HttpGet("https://rawscripts.net/raw/Universal-Script-Invinicible-Flight-R15-45414"))() 
-        WindUI:Notify({
-            Title = "WX",
-            Content = "无敌少侠飞行加载成功",
-            Duration = 3,
-            Icon = "layout-grid",
-        })        
-    end
-})
-local Button31 = TabHandles.WX6:Button({
-    Title = "俄亥俄州XA",
-    Desc = "能不能用不确定",
-    Locked = false,
-    Callback = function()
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/XingFork/Scripts/refs/heads/main/Ohio"))()
-        WindUI:Notify({
-            Title = "WX",
-            Content = "XA俄亥俄州加载成功",
-            Duration = 3,
-            Icon = "layout-grid",
-        })        
-    end
-})
-local Button32 = TabHandles.WX2:Button({
-    Title = "锻造1",
-    Desc = "所有锻造的加载的都有点卡，不要在意  ",
-    Locked = false,
-    Callback = function()
-loadstring(game:HttpGet("https://pastefy.app/hpo8mrBS/raw"))()
-        WindUI:Notify({
-            Title = "WX",
-            Content = "锻造加载成功",
-            Duration = 3,
-            Icon = "layout-grid",
-        })        
-    end
-})
-local Button33 = TabHandles.WX2:Button({
-    Title = "锻造二",
-    Desc = "我汉化的",
-    Locked = false,
-    Callback = function()
-loadstring(game:HttpGet("https://pastefy.app/cqpwBBvX/raw"))() 
-        WindUI:Notify({
-            Title = "WX",
-            Content = "锻造加载成功",
-            Duration = 3,
-            Icon = "layout-grid",
-        })        
-    end
-})
-local Button34 = TabHandles.WX2:Button({
-    Title = "锻造三",
-    Desc = "我汉化的 ",
-    Locked = false,
-    Callback = function()
-loadstring(game:HttpGet("https://pastefy.app/eEgLJA4f/raw"))()
-        WindUI:Notify({
-            Title = "WX",
-            Content = "锻造加载成功",
-            Duration = 3,
-            Icon = "layout-grid",
-        })        
-    end
-})
-
--- ==================== UI设色页面 ====================
-local Button1 = TabHandles.WX8:Button({
-    Title = "自定义界面",
-    Desc = "个性化您的体验",
-    Image = "palette",
-    ImageSize = 20,
-    Color = "White"
-})
-local themes = {}
-for themeName, _ in pairs(WindUI:GetThemes()) do
-    table.insert(themes, themeName)
-end
-table.sort(themes)
-local themeDropdown = TabHandles.WX8:Dropdown({
-    Title = "主题选择",
-    Values = themes,
-    Value = "Dark",
-    Callback = function(theme)
-        WindUI:SetTheme(theme)
-        WindUI:Notify({
-            Title = "WX",
-            Content = "已应用"..theme.."主题",
-            Icon = "palette",
-            Duration = 2
-        })
-    end
-})
-local transparencySlider = TabHandles.WX8:Slider({
-    Title = "界面透明度",
-    Value = { 
-        Min = -2,
-        Max = 1,
-        Default = 0.2,
-    },
-    Step = 0.1,
-    Callback = function(value)
-        Window:ToggleTransparency(tonumber(value) > 0)
-        WindUI.TransparencyValue = tonumber(value)
-    end
-})
-TabHandles.WX8:Toggle({
-    Title = "启用白色主题",
-    Desc = "使用白色调主题方案",
-    Value = true,
-    Callback = function(state)
-        WindUI:SetTheme(state and "Light" or "Dark")
-        themeDropdown:Select(state and "Light" or "Dark")
-        WindUI:Notify({
-            Title = "WX",
-            Content = state and "已启用白色主题" or "已启用黑色主题",
-            Duration = 2,
-            Icon = "palette"
-        })
-    end
-})
-TabHandles.WX8:Button({
-    Title = "创建新主题",
-    Icon = "plus",
-    Callback = function()
-        Window:Dialog({
-            Title = "创建主题",
-            Content = "此功能很快就会推出",
-            Buttons = {
-                {
-                    Title = "确认",
-                    Variant = "Primary"
-                }
-            }
-        })
-    end
-})
-TabHandles.WX8:Paragraph({
-    Title = "配置管理",
-    Desc = "保存你的设置",
-    Image = "save",
-    ImageSize = 20,
-    Color = "White"
-})
-local configName = "default"
-local configFile = nil
-local MyPlayerData = {
-    name = "Player1",
-    level = 1,
-    inventory = { "sword", "shield", "potion" }
-}
-TabHandles.WX8:Input({
-    Title = "配置名称",
-    Value = configName,
-    Callback = function(value)
-        configName = value
-    end
-})
-local ConfigManager = Window.ConfigManager
-if ConfigManager then
-    ConfigManager:Init(Window)
-    
-    TabHandles.WX8:Button({
-        Title = "保存配置",
-        Icon = "save",
-        Variant = "Primary",
-        Callback = function()
-            configFile = ConfigManager:CreateConfig(configName)
-            
-            configFile:Register("featureToggle", Toggle1)
-            configFile:Register("intensitySlider", Slider)
-            configFile:Register("modeDropdown", themeDropdown)
-            configFile:Register("themeDropdown", themeDropdown)
-            configFile:Register("transparencySlider", transparencySlider)
-            
-            configFile:Set("playerData", MyPlayerData)
-            configFile:Set("lastSave", os.date("%Y-%m-%d %H:%M:%S"))
-            
-            if configFile:Save() then
-                WindUI:Notify({ 
-                    Title = "保存配置", 
-                    Content = "保存为："..configName,
-                    Icon = "check",
-                    Duration = 3
-                })
-            else
-                WindUI:Notify({ 
-                    Title = "错误", 
-                    Content = "保存失败",
-                    Icon = "x",
-                    Duration = 3
-                })
-            end
-        end
-    })
-    TabHandles.WX8:Button({
-        Title = "加载配置",
-        Icon = "folder",
-        Callback = function()
-            configFile = ConfigManager:CreateConfig(configName)
-            local loadedData = configFile:Load()
-            
-            if loadedData then
-                if loadedData.playerData then
-                    MyPlayerData = loadedData.playerData
-                end
-                
-                local lastSave = loadedData.lastSave or "Unknown"
-                WindUI:Notify({ 
-                    Title = "加载配置", 
-                    Content = "正在加载："..configName.."\n上次保存："..lastSave,
-                    Icon = "refresh-cw",
-                    Duration = 5
-                })
-                
-                local ButtonData = TabHandles.WX8:Button({
-                    Title = "玩家数据",
-                    Desc = string.format("名字: %s\n等级: %d\n库存: %s", 
-                        MyPlayerData.name, 
-                        MyPlayerData.level, 
-                        table.concat(MyPlayerData.inventory, ", "))
-                })
-            else
-                WindUI:Notify({ 
-                    Title = "错误", 
-                    Content = "加载失败",
-                    Icon = "x",
-                    Duration = 3
-                })
-            end
-        end
-    })
-else
-    TabHandles.WX8:Paragraph({
-        Title = "配置管理不可用",
-        Desc = "此功能需要配置管理",
-        Image = "alert-triangle",
-        ImageSize = 20,
-        Color = "White"
-    })
-end
-
-local Button = TabHandles.WX2:Button({
-    Title = "踏空行走",
-    Desc = "",
-    Locked = false,
-    Callback = function()
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/114514lzkill/ShaHUB/refs/heads/main/ShaHUB"))()
-        WindUI:Notify({
-            Title = "WX",
-            Content = "踏空行走加载成功",
-            Duration = 3,
-            Icon = "layout-grid",
-        })        
-    end
-})
--- 现在开始添加提供的脚本功能
-local RunService = game:GetService("RunService")
-local selectedPlayer = nil
-local playerList = {}
-local playerDropdown
-
--- 添加分隔段落
-TabHandles.WX4:Paragraph({
-    Title = "甩飞页面",
-    Desc = "🤓🤓甩飞他们",
-    Image = "users",
-    ImageSize = 20
-})
-
--- 玩家选择部分
-local playerSelectionParagraph = TabHandles.WX4:Paragraph({
-    Title = "没用，不要点",
-    Desc = "选择玩家在最下面"
-})
-
--- 刷新玩家列表的函数
-local function refreshPlayers()
-    table.clear(playerList)
-    for _, player in pairs(game.Players:GetPlayers()) do
-        if player ~= game.Players.LocalPlayer then
-            table.insert(playerList, player.Name)
-        end
-    end
-    -- 如果已经有下拉框，更新它
-    if playerDropdown then
-        -- WindUI可能需要不同的方式更新下拉框
-        -- 这里我们重新创建下拉框
-        playerDropdown = TabHandles.WX4:Dropdown({
-            Title = "选择玩家的名称",
-            Values = playerList,
-            Value = playerList[1] or "",
-            Callback = function(selected)
-                selectedPlayer = game.Players:FindFirstChild(selected)
-                if selectedPlayer then
-                    WindUI:Notify({
-                        Title = "WX",
-                        Content = "已选择玩家: " .. selectedPlayer.Name,
-                        Duration = 3,
-                        Icon = "user"
-                    })
-                end
-            end
-        })
-    end
-end
-
--- 初始创建下拉框
-playerDropdown = TabHandles.WX4:Dropdown({
-    Title = "选择玩家的名称",
-    Values = playerList,
-    Value = "",
-    Callback = function(selected)
-        selectedPlayer = game.Players:FindFirstChild(selected)
-        if selectedPlayer then
-            WindUI:Notify({
-                Title = "WX",
-                Content = "已选择玩家: " .. selectedPlayer.Name,
-                Duration = 3,
-                Icon = "user"
+TabHandles.WX4：按钮({
+标题="传送到玩家旁边"，
+DESC="传送到选中玩家的旁边"，
+图标="导航"，
+回调=函数()
+如果selectedPlayer和selectedPlayer.Character和selectedPlayer。字符：FindFirstChild("HumanoidRootPart")然后
+本地targetPos=selectedPlayer。性格。HumanoidRootPart。位置
+游戏。玩家。本地玩家。性格。HumanoidRootPart。cframe=cframe.New(targetPos+Vector3.新的(3，0，3))
+WindUI：通知({
+title="WX"，
+内容="已传送到"..selectedPlayer.Name.."旁边"，
+持续时间=3，
+图标=“导航”
             })
-        end
-    end
-})
+其他
+WindUI：通知({
+title="WX"，
+内容="请先选择一个有效玩家"，
+持续时间=3，
+icon="alert-triangle"
 
--- 刷新玩家列表按钮
-TabHandles.WX4:Button({
-    Title = "刷新玩家列表",
-    Desc = "刷新当前所有在线玩家",
-    Icon = "refresh-cw",
-    Callback = function()
-        refreshPlayers()
-        WindUI:Notify({
-            Title = "WX",
-            Content = "玩家列表已刷新",
-            Duration = 3,
-            Icon = "check"
-        })
-    end
-})
-
--- 查看玩家按钮
-TabHandles.WX4:Button({
-    Title = "查看选中玩家",
-    Desc = "将视角切换到选中的玩家",
-    Icon = "eye",
-    Callback = function()
-        if selectedPlayer and selectedPlayer.Character and selectedPlayer.Character:FindFirstChild("Humanoid") then
-            game.Workspace.CurrentCamera.CameraSubject = selectedPlayer.Character.Humanoid
-            WindUI:Notify({
-                Title = "WX",
-                Content = "正在查看: " .. selectedPlayer.Name,
-                Duration = 3,
-                Icon = "eye"
-            })
-        else
-            WindUI:Notify({
-                Title = "WX",
-                Content = "请先选择一个有效玩家",
-                Duration = 3,
-                Icon = "alert-triangle"
-            })
-        end
-    end
-})
-
--- 停止查看按钮
-TabHandles.WX4:Button({
-    Title = "停止查看",
-    Desc = "将视角切回自己的角色",
-    Icon = "eye-off",
-    Callback = function()
-        local localPlayer = game.Players.LocalPlayer
-        if localPlayer.Character and localPlayer.Character:FindFirstChild("Humanoid") then
-            game.Workspace.CurrentCamera.CameraSubject = localPlayer.Character.Humanoid
-            WindUI:Notify({
-                Title = "WX",
-                Content = "已切回自己的视角",
-                Duration = 3,
-                Icon = "eye-off"
-            })
-        end
-    end
-})
-
--- 传送功能部分
-TabHandles.WX4:Paragraph({
-    Title = "传送功能",
-    Desc = "传送相关功能",
-    Image = "move",
-    ImageSize = 20
-})
-
--- 传递到玩家旁边
-TabHandles.WX4:Button({
-    Title = "传送到玩家旁边",
-    Desc = "传送到选中玩家的旁边",
-    Icon = "navigation",
-    Callback = function()
-        if selectedPlayer and selectedPlayer.Character and selectedPlayer.Character:FindFirstChild("HumanoidRootPart") then
-            local targetPos = selectedPlayer.Character.HumanoidRootPart.Position
-            game.Players.LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(targetPos + Vector3.new(3, 0, 3))
-            WindUI:Notify({
-                Title = "WX",
-                Content = "已传送到 " .. selectedPlayer.Name .. " 旁边",
-                Duration = 3,
-                Icon = "navigation"
-            })
-        else
-            WindUI:Notify({
-                Title = "WX",
-                Content = "请先选择一个有效玩家",
-                Duration = 3,
-                Icon = "alert-triangle"
-
-    Desc = "吸人、甩飞等高级功能",
-    Image = "wind",
-    ImageSize = 20
+DESC="吸人、甩飞等高级功能"，
+image="wind"，
+imagesize=20
 })
 
 -- 甩飞一次选中的人
-TabHandles.WX4:Button({
+TabHandles.WX4：按钮({
 
-    Desc = "甩飞一次选中的玩家",
-    Icon = "wind",
-    Callback = function()
-        local Player = game:GetService("Players").LocalPlayer
-        local TargetPlayer = selectedPlayer
-        if not TargetPlayer or TargetPlayer == Player then
-            WindUI:Notify({
-                Title = "WX",
-                Content = "无玩家可甩飞",
-                Duration = 3,
-                Icon = "alert-triangle"
+DESC="甩飞一次选中的玩家"，
+icon="wind"，
+回调=函数()
+本地玩家=游戏：GetService("玩家").LocalPlayer
+本地TargetPlayer=selectedPlayer
+如果不是TargetPlayer或TargetPlayer==Player，则
+WindUI：通知({
+title="WX"，
+内容="无玩家可甩飞"，
+持续时间=3，
+icon="alert-triangle"
             })
-            return
-        end
+返回
+结束
 
-        local Message = function(_Title, _Text, Time)
-            WindUI:Notify({
-                Title = _Title,
-                Content = _Text,
-                Duration = Time,
-                Icon = "bell"
+本地消息=功能(_标题、_文本、时间)
+WindUI：通知({
+title=_Title，
+内容=_文本，
+持续时间=时间，
+图标=“铃”
             })
-        end
+结束
 
-        local pid = game.PlaceId
-        if pid == 189707 then
-            local rs = game:GetService("RunService")
-            local hb = rs.Heartbeat
-            local rsd = rs.RenderStepped
-            local lp = game.Players.LocalPlayer
-            local z = Vector3.zero
-            local function f(c)
-                local r = c:WaitForChild("HumanoidRootPart")
-                if r then
-                    local con
-                    con = hb:Connect(function()
-                        if not r.Parent then
-                            con:Disconnect()
-                        end
-                        local v = r.AssemblyLinearVelocity
-                        r.AssemblyLinearVelocity = z
-                        rsd:Wait()
-                        r.AssemblyLinearVelocity = v
-                    end)
-                end
-            end
-            f(lp.Character)
-            lp.CharacterAdded:Connect(f)
-        end
+本地PID=game.PlaceId
+如果pid==189707，则
+本地Rs=game:GetService("RunService")
+local hb=rs.Heartbeat
+本地RSD=rs.Render步进
+local lp=game.Players.LocalPlayer
+局部z=Vector3.zero
+局部函数f(c)
+本地R=c:WaitForChild("HumanoidRootPart")
+如果r，则
+局部con
+con=hb：连接(函数()
+如果不是R.父母，则
+反对：断开()
+结束
+局部v=r.AssemblyLinearVelocity
+r.AssemblyLinearVelocity=z
+RSD:Wait()
+r.AssemblyLinearVelocity=v
+结束)
+结束
+结束
+F(lp.Character)
+lp.CharacterAdded:Connect(f)
+结束
 
-        local SkidFling = function(Target)
-            local Character = Player.Character
-            local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
-            local RootPart = Humanoid and Humanoid.RootPart
-            local TCharacter = Target.Character
-            local THumanoid = TCharacter and TCharacter:FindFirstChildOfClass("Humanoid")
-            local TRootPart = THumanoid and THumanoid.RootPart
-            local THead = TCharacter and TCharacter:FindFirstChild("Head")
-            local Accessory = TCharacter and TCharacter:FindFirstChildOfClass("Accessory")
-            local Handle = Accessory and Accessory:FindFirstChild("Handle")
+局部SkidFling=函数(目标)
+本地字符=玩家.字符
+局部类人字符=字符和字符：FindFirstChildOfClass("类人字符")
+局部根部件=类人和类人根部件
+本地TCharacter=Target.Character
+局部THumanoid=TCharacter和TCharacter:FindFirstChildOfClass("Humanoid")
+局部TRootPart=THumanid和THumanid.rootPart
+本地thead=TCharacter和TCharacter:FindFirstChild("Head")
+本地附件=TCharacter和TCharacter:FindFirstChildOfClass("Accessory")
+本地句柄=附件和附件：FindFirstChild("Handle")
 
-            if not (Character and Humanoid and RootPart and TCharacter and THumanoid) then
-                return Message("WX", "玩家已趋势", 2)
-            end
-            if THumanoid.Sit then return Message("WX", "目标处于坐姿", 2) end
-            if not TCharacter:FindFirstChildWhichIsA("BasePart") then return Message("WX", "玩家已趋势", 2) end
+如果不是(字符和类人和根部分和TCharacter和类人)，则
+返回消息("WX"，"玩家已趋势"，2)
+结束
+如果人形的话。sit return Message("WX"，"目标处于坐姿"，2)end
+如果不是TCharacter:FindFirstChildWhichISA("BasePart")，则返回消息("WX"，"玩家已趋势"，2)end
 
-            if THead then
-                workspace.CurrentCamera.CameraSubject = THead
-            elseif Handle then
-                workspace.CurrentCamera.CameraSubject = Handle
-            else
-                workspace.CurrentCamera.CameraSubject = THumanoid
-            end
+如果西德那么
+workspace.CurrentCamera.CameraSubject=thead
+elseif然后处理
+workspace.CurrentCamera.CameraSubject=句柄
+其他
+workspace.CurrentCamera.CameraSubject=THumanid
+结束
 
-            if RootPart.Velocity.Magnitude < 50 then
-                getgenv().OldPos = RootPart.CFrame
-            end
+如果RootPart.Velocity.Magnitude<50，则
+getgenv().OldPos=RootPart.CFrame
+结束
 
-            local FPos = function(BasePart, Pos, Ang)
-                RootPart.CFrame = CFrame.new(BasePart.Position) * Pos * Ang
-                Character:SetPrimaryPartCFrame(CFrame.new(BasePart.Position) * Pos * Ang)
-                RootPart.Velocity = Vector3.new(9e7, 9e7 * 10, 9e7)
-                RootPart.RotVelocity = Vector3.new(9e8, 9e8, 9e8)
-            end
+局部FPOs=函数(Base Part、Pos、Ang)
+RootPart.CFrame=CFrame.new(BasePart.Position)*Pos*Ang
+字符：SetPrimaryPartCFrame(cframe.New(BasePart.位置)*Pos*Ang)
+RootPart.Velocity=Vector3.new(9E7，9E7*10，9E7)
+RootPart.RotVelocity=Vector3.new(9E8，9E8，9E8)
+结束
 
-            local SFBasePart = function(BasePart)
-                local TimeToWait = 2
-                local Time = tick()
-                local Angle = 0
-                repeat
-                    if RootPart and THumanoid then
-                        if BasePart.Velocity.Magnitude < 50 then
-                            Angle = Angle + 100
-                            FPos(BasePart, CFrame.new(0, 1.5, 0) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 0.95, CFrame.Angles(math.rad(Angle),0 ,0))
-                            task.wait()
-                            FPos(BasePart, CFrame.new(0, -1.5, 0) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 0.95, CFrame.Angles(math.rad(Angle), 0, 0))
-                            task.wait()
-                            FPos(BasePart, CFrame.new(2.25, 1.5, -2.25) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 0.95, CFrame.Angles(math.rad(Angle), 0, 0))
-                            task.wait()
-                            FPos(BasePart, CFrame.new(-2.25, -1.5, 2.25) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 0.95, CFrame.Angles(math.rad(Angle), 0, 0))
-                            task.wait()
-                            FPos(BasePart, CFrame.new(0, 1.5, 0) + THumanoid.MoveDirection,CFrame.Angles(math.rad(Angle), 0, 0))
-                            task.wait()
-                            FPos(BasePart, CFrame.new(0, -1.5, 0) + THumanoid.MoveDirection,CFrame.Angles(math.rad(Angle), 0, 0))
-                            task.wait()
-                        else
-                            FPos(BasePart, CFrame.new(0, 1.5, THumanoid.WalkSpeed), CFrame.Angles(math.rad(90), 0, 0))
-                            task.wait()
-                            FPos(BasePart, CFrame.new(0, -1.5, -THumanoid.WalkSpeed), CFrame.Angles(0, 0, 0))
+本地SFBasePart=函数(BasePart)
+本地等待时间=2
+本地时间=刻度()
+局部角度=0
+重复
+如果RootPart和THumanid，则
+如果基座部件速度幅度<50，则
+角度=角度+100
+FPOs(BasePart，CFrame.new(0，1.5，0)+THumanoid.MoveDirection*BasePart.速度.幅度/0.95，CFrame.角度(数学rad(角度)，0，0)
+task.wait()
+FPOs(BasePart，CFrame.new(0，-1.5，0)+THumanoid.MoveDirection*BasePart.速度.幅度/0.95，CFrame.角度(数学rad(角度)，0，0)
+task.wait()
+FPOs(BasePart，CFrame.new(2.25，1.5，-2.25)+THumanoid.MoveDirection*BasePart.速度.幅度/0.95，CFrame.角度(数学rad(角度)，0，0)
+task.wait()
+FPOs(BasePart，CFrame.new(-2.25，-1.5，2.25)+THumanoid.MoveDirection*BasePart.速度.幅度/0.95，CFrame.角度(数学rad(角度)，0，0)
+task.wait()
+FPOs(BasePart，CFrame.new(0，1.5，0)+THumanid.MoveDirection，cframe.角度(数学。弧度(角度)，0，0))
+task.wait()
+FPOs(BasePart，CFrame.new(0，-1.5，0)+THumanid.MoveDirection，cframe.角度(数学。弧度(角度)，0，0))
+task.wait()
+其他
+FPOs(BasePart，CFrame.new(0，1.5，THumanoid.WalkSpeed)，CFrame.Angles(math.rad(90)，0，0))
+task.wait()
+FPOs(BasePart，CFrame.new(0，-1.5，-THumanid.WalkSpeed)，CFrame.Angles(0，0，0))
                             task.wait()
                             FPos(BasePart, CFrame.new(0, 1.5, THumanoid.WalkSpeed), CFrame.Angles(math.rad(90), 0, 0))
                             task.wait()
@@ -1670,28 +297,28 @@ TabHandles.WX4:Button({
                                 FPos(BasePart, CFrame.new(0, -1.5, -THumanoid.WalkSpeed), CFrame.Angles(0, 0, 0))
                                 task.wait()
                                 FPos(BasePart, CFrame.new(0, 1.5, THumanoid.WalkSpeed), CFrame.Angles(math.rad(90), 0, 0))
-                                task.wait()
+task.wait()
                                 
-                                FPos(BasePart, CFrame.new(0, 1.5, TRootPart.Velocity.Magnitude / 0.95), CFrame.Angles(math.rad(90), 0, 0))
-                                task.wait()
-                                FPos(BasePart, CFrame.new(0, -1.5, -TRootPart.Velocity.Magnitude / 0.95), CFrame.Angles(0, 0, 0))
-                                task.wait()
-                                FPos(BasePart, CFrame.new(0, 1.5, TRootPart.Velocity.Magnitude / 0.95), CFrame.Angles(math.rad(90), 0, 0))
-                                task.wait()
-                                FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(math.rad(90), 0, 0))
-                                task.wait()
-                                FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(0, 0, 0))
-                                task.wait()
-                                FPos(BasePart, CFrame.new(0, -1.5 ,0), CFrame.Angles(math.rad(-90), 0, 0))
-                                task.wait()
-                                FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(0, 0, 0))
-                                task.wait()
-                            end
-                        else
-                            break
-                        end
-                    until BasePart.Velocity.Magnitude > 500 or BasePart.Parent ~= Target.Character or Target.Parent ~= game:GetService("Players") or THumanoid.Sit or Humanoid.Health <= 0 or tick() > Time + TimeToWait
-                end
+FPOs(BasePart，CFrame.new(0，1.5，TRootPart.速度.幅度/0.95)，CFrame.角度(math.rad(90)，0，0))
+task.wait()
+FPOs(BasePart，CFrame.new(0，-1.5，-TRootPart.速度.幅度/0.95)，CF帧.角度(0，0，0))
+task.wait()
+FPOs(BasePart，CFrame.new(0，1.5，TRootPart.速度.幅度/0.95)，CFrame.角度(math.rad(90)，0，0))
+task.wait()
+FPOs(BasePart，CFrame.new(0，-1.5，0)，CFrame.Angles(math.rad(90)，0，0))
+task.wait()
+FPOs(BasePart，CFrame.new(0，-1.5，0)，CFrame.Angles(0，0，0))
+task.wait()
+FPOs(BasePart，CFrame.new(0，-1.5，0)，CFrame.Angles(math.rad(-90)，0，0))
+task.wait()
+FPOs(BasePart，CFrame.new(0，-1.5，0)，CFrame.Angles(0，0，0))
+task.wait()
+结束
+其他
+打破
+结束
+直到“BasePart.Velocity.Magnitude”>500或“BasePart”。parent~=Target。角色或目标。Parent~=game:GetService(“玩家”)或THumanoid。坐姿或人形。健康状态<=0或勾选()>时间+等待时间
+结束
                 
                 workspace.FallenPartsDestroyHeight = 0/0
                 local BV = Instance.new("BodyVelocity")
@@ -2115,21 +742,21 @@ TabHandles.WX4:Toggle({
 -- 传送后面的距离滑块
 local backDistance = 2
 TabHandles.WX4:Slider({
-    Title = "传送后面的距离",
-    Desc = "设置传送到玩家后面的距离",
+title="传送后面的距离"，
+DESC="设置传送到玩家后面的距离"，
 值={
 min=1，
 最大值=50，
 默认值=backDistance
     },
 步长=1，
-callback=函数(值)
+回调=函数(值)
 backDistance=tonumber(值)
 WindUI：通知({
 title="WX"，
-content="后面距离设置为："..backDistance，
+内容="后面距离设置为："..backDistance，
 持续时间=3，
-icon="标尺"
+图标="标尺"
         })
 结束
 })
